@@ -1,0 +1,2 @@
+// Placeholder: gateway listener for DecryptionRequested events to trigger FHE decryption and callback.
+console.log("gateway-listener placeholder: watch DecryptionRequested, call relayer with decrypted total");
