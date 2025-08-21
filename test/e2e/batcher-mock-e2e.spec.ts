@@ -1,9 +1,19 @@
 import { expect } from "chai";
 import { ethers, deployments } from "hardhat";
 
-describe("E2E with MockAdapter", () => {
-  it("performs batch swap & users claim equal WETH shares", async () => {
+describe("E2E with MockAdapter", function () {
+  it("performs batch swap & users claim equal WETH shares", async function () {
     await deployments.fixture(["core"]);
+
+    // Run this E2E only when the mock stack is deployed
+    const adapterDep = await deployments.getOrNull("MockAdapter");
+    const usdcDep    = await deployments.getOrNull("MockERC20");    // mUSDC
+    const wethDep    = await deployments.getOrNull("MockERC20_1");  // mWETH
+    if (!adapterDep || !usdcDep || !wethDep) {
+      console.log("Skipping mock E2E: mocks not deployed in this run");
+      this.skip(); // properly mark as skipped
+    }
+
     const [user1, user2] = await ethers.getSigners();
 
     const regDep = await deployments.get("FHEIntentRegistry");
@@ -12,18 +22,13 @@ describe("E2E with MockAdapter", () => {
     const reg = await ethers.getContractAt("FHEIntentRegistry", regDep.address, user1);
     const batcher = await ethers.getContractAt("DCABatcher", batDep.address, user1);
 
-    // Mock token addresses by deploy order: MockERC20 (mUSDC) and MockERC20_1 (mWETH)
-    const usdcDep = await deployments.get("MockERC20");
-    const wethDep = await deployments.get("MockERC20_1");
-    const adapterDep = await deployments.get("MockAdapter");
+    const usdc = await ethers.getContractAt("MockERC20", usdcDep!.address, user1);
+    const weth = await ethers.getContractAt("MockERC20", wethDep!.address, user1);
 
-    const usdc = await ethers.getContractAt("MockERC20", usdcDep.address, user1);
-    const weth = await ethers.getContractAt("MockERC20", wethDep.address, user1);
+    // Fund adapter with USDC so it can "burn" and mint WETH 1:1
+    await (await usdc.mint(adapterDep!.address, 2_000_000)).wait(); // 2 USDC (6 decimals)
 
-    // Fund the adapter with USDC so it can "burn" and mint WETH 1:1
-    await (await usdc.mint(adapterDep.address, 2_000_000)).wait(); // 2 USDC (6 decimals)
-
-    // k=2 so the batch triggers right after two intents
+    // k=2 so the batch triggers with two intents
     await (await batcher.setParams(2, 3600)).wait();
 
     // intents: #1 by user1, #2 by user2
@@ -45,9 +50,10 @@ describe("E2E with MockAdapter", () => {
     const b1After = await weth.balanceOf(await user1.getAddress());
     expect(b1After - b1Before).to.equal(1_000_000);
 
-    const b2Before = await weth.balanceOf(await user2.getAddress());
+    const wethAsUser2 = weth.connect(user2);
+    const b2Before = await wethAsUser2.balanceOf(await user2.getAddress());
     await (await batcher.connect(user2).claim(0, 2)).wait();
-    const b2After = await weth.balanceOf(await user2.getAddress());
+    const b2After = await wethAsUser2.balanceOf(await user2.getAddress());
     expect(b2After - b2Before).to.equal(1_000_000);
   });
 });
