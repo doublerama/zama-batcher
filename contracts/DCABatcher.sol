@@ -184,3 +184,16 @@ contract DCABatcher {
     function getBatchIntents(uint256 batchId) external view returns (uint256[] memory ids) { ids = batchIntents[batchId]; }
     function getShare(uint256 batchId, uint256 intentId) external view returns (uint256) { return share[batchId][intentId]; }
 }
+// ------- Chainlink Automation-compatible -------
+
+function checkUpkeep(bytes calldata) external view override returns (bool upkeepNeeded, bytes memory performData) {
+    upkeepNeeded = _readyByK() || _readyByTime();
+    performData = "";
+}
+
+function performUpkeep(bytes calldata) external override {
+    if (_readyByK() || _readyByTime()) {
+        _requestDecryption();
+    }
+}
+
