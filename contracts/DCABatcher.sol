@@ -1,43 +1,41 @@
-interface IAutomationCompatible {
-    function checkUpkeep(bytes calldata) external view returns (bool upkeepNeeded, bytes memory performData);
-    function performUpkeep(bytes calldata performData) external;
-}
-
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-/// @dev minimal interface of the intent registry
 interface IIntentRegistry {
     function isActive(uint256 id) external view returns (bool);
     function ownerOf(uint256 id) external view returns (address);
 }
 
-/// @dev swap adapter + sweep for distributions
 interface IUniswapAdapter {
     function swapUsdcToEth(uint256 amountIn, uint256 minOut) external returns (uint256 amountOut);
     function sweepWeth(address to, uint256 amount) external;
 }
 
+// Minimal Chainlink Automation-compatible interface
+interface IAutomationCompatible {
+    function checkUpkeep(bytes calldata) external view returns (bool upkeepNeeded, bytes memory performData);
+    function performUpkeep(bytes calldata performData) external;
+}
+
 /**
- * @title DCABatcher (starter scaffold + distribution)
- * @notice Collects intents into a queue and triggers a batch either by k-threshold or by time window.
- *         After relayer callback, executes a single swap and assigns equal shares to intents' owners.
+ * @title DCABatcher
+ * @notice Collects encrypted intents (by id), triggers batch by k/Δt,
+ *         calls relayer callback, executes single swap on DEX and assigns shares.
  */
-contract DCABatcher {
+contract DCABatcher is IAutomationCompatible {
     IIntentRegistry public registry;
     IUniswapAdapter public dexAdapter;
 
-    // k-anonymity and fallback timer
+    // k-anonymity and time fallback
     uint256 public kMin = 10;
     uint256 public fallbackSeconds = 60;
 
-    // queue of intents for the next batch window
+    // rolling window
     uint256[] public queue;
     uint256 public lastBatchTs;
     uint256 public batchNonce;
-    address public relayer; // offchain gateway/relayer allowed to call the callback
+    address public relayer;
 
-    // batch snapshot + results
     struct BatchMeta {
         uint256 createdAt;
         bool executed;
@@ -46,7 +44,7 @@ contract DCABatcher {
     }
     mapping(uint256 => BatchMeta) public batches;                   // batchId => meta
     mapping(uint256 => uint256[]) public batchIntents;              // batchId => intentIds
-    mapping(uint256 => mapping(uint256 => uint256)) public share;   // batchId => intentId => WETH amount (wei)
+    mapping(uint256 => mapping(uint256 => uint256)) public share;   // batchId => intentId => WETH amount
     mapping(uint256 => mapping(uint256 => bool)) public claimed;    // batchId => intentId => claimed?
 
     event JoinedBatch(uint256 indexed intentId, address indexed user);
@@ -62,8 +60,7 @@ contract DCABatcher {
         lastBatchTs = block.timestamp;
     }
 
-    // ------- admin params (later: timelock/governance) -------
-
+    // -------- admin (MVP; в проде — timelock/governance) --------
     function setParams(uint256 _kMin, uint256 _fallbackSeconds) external {
         require(_kMin > 0, "k>0");
         kMin = _kMin;
@@ -78,9 +75,7 @@ contract DCABatcher {
         dexAdapter = IUniswapAdapter(_adapter);
     }
 
-    // ------- user flow -------
-
-    /// @notice User includes their intent into the upcoming batch
+    // ---------------- user flow ----------------
     function joinBatch(uint256 intentId) external {
         require(registry.isActive(intentId), "inactive intent");
         require(registry.ownerOf(intentId) == msg.sender, "not owner");
@@ -93,15 +88,13 @@ contract DCABatcher {
         }
     }
 
-    /// @notice Anyone may poke the batcher (permissionless executors)
     function maybeExecuteBatch() external {
         if (_readyByK() || _readyByTime()) {
             _requestDecryption();
         }
     }
 
-    // ------- offchain hook: relayer returns the decrypted USDC total -------
-
+    // --------- relayer callback (after FHE decryption of the total) ---------
     function onDecryptionResult(uint256 batchId, uint256 totalUsdc, uint256 minEthOut) external {
         require(msg.sender == relayer, "only relayer");
         require(batchId == batchNonce, "stale batch");
@@ -110,14 +103,14 @@ contract DCABatcher {
 
         emit DecryptionCallback(batchId, totalUsdc);
 
-        // 1) single USDC→ETH swap on the DEX
+        // 1) single swap USDC->WETH on DEX adapter
         uint256 amountOut = dexAdapter.swapUsdcToEth(totalUsdc, minEthOut);
         emit SwapExecuted(batchId, totalUsdc, amountOut);
 
-        // 2) assign equal shares (placeholder; real version uses FHE proportional splits)
+        // 2) equal split (MVP; далее — пропорции под FHE)
         uint256 size = batchIntents[batchId].length;
         if (size > 0 && amountOut > 0) {
-            uint256 base = amountOut / size; // remainder is ignored in MVP
+            uint256 base = amountOut / size;
             for (uint256 i = 0; i < size; i++) {
                 uint256 intentId = batchIntents[batchId][i];
                 share[batchId][intentId] = base;
@@ -126,19 +119,17 @@ contract DCABatcher {
             }
         }
 
-        // 3) finalize
+        // 3) finalize + roll window
         meta.createdAt = block.timestamp;
         meta.executed = true;
         meta.totalUsdc = totalUsdc;
         meta.totalEth  = amountOut;
 
-        // reset queue and start a new window
         delete queue;
         lastBatchTs = block.timestamp;
         batchNonce += 1;
     }
 
-    /// @notice Claim assigned WETH for a given intent in an executed batch (transfers from adapter)
     function claim(uint256 batchId, uint256 intentId) external {
         require(batches[batchId].executed, "batch not executed");
         require(registry.ownerOf(intentId) == msg.sender, "not owner");
@@ -152,8 +143,7 @@ contract DCABatcher {
         emit Claimed(batchId, intentId, msg.sender, amount);
     }
 
-    // ------- helpers -------
-
+    // ---------------- internal helpers ----------------
     function _readyByK() internal view returns (bool) {
         return queue.length >= kMin;
     }
@@ -174,26 +164,25 @@ contract DCABatcher {
 
         emit BatchReady(id, len);
 
-        // In production: build the aggregated ciphertext from per-interval encrypted amounts.
-        bytes memory aggregateCiphertext = ""; // placeholder for fhEVM ciphertext
+        // In production: aggregate FHE ciphertext; here it's a placeholder.
+        bytes memory aggregateCiphertext = "";
         emit DecryptionRequested(id, aggregateCiphertext, queue);
     }
 
-    // view helpers for UI
+    // ---------------- views for UI ----------------
     function currentQueue() external view returns (uint256[] memory ids) { ids = queue; }
     function getBatchIntents(uint256 batchId) external view returns (uint256[] memory ids) { ids = batchIntents[batchId]; }
     function getShare(uint256 batchId, uint256 intentId) external view returns (uint256) { return share[batchId][intentId]; }
-}
-// ------- Chainlink Automation-compatible -------
 
-function checkUpkeep(bytes calldata) external view override returns (bool upkeepNeeded, bytes memory performData) {
-    upkeepNeeded = _readyByK() || _readyByTime();
-    performData = "";
-}
+    // -------- Chainlink Automation-compatible (ВНУТРИ контракта!) --------
+    function checkUpkeep(bytes calldata) external view override returns (bool upkeepNeeded, bytes memory performData) {
+        upkeepNeeded = _readyByK() || _readyByTime();
+        performData = "";
+    }
 
-function performUpkeep(bytes calldata) external override {
-    if (_readyByK() || _readyByTime()) {
-        _requestDecryption();
+    function performUpkeep(bytes calldata) external override {
+        if (_readyByK() || _readyByTime()) {
+            _requestDecryption();
+        }
     }
 }
-
