@@ -7,16 +7,16 @@ interface IIntentRegistry {
     function ownerOf(uint256 id) external view returns (address);
 }
 
-/// @dev minimal interface of the swap adapter
+/// @dev swap adapter + sweep for distributions
 interface IUniswapAdapter {
     function swapUsdcToEth(uint256 amountIn, uint256 minOut) external returns (uint256 amountOut);
+    function sweepWeth(address to, uint256 amount) external;
 }
 
 /**
- * @title DCABatcher (starter scaffold)
+ * @title DCABatcher (starter scaffold + distribution)
  * @notice Collects intents into a queue and triggers a batch either by k-threshold or by time window.
- *         In this MVP, FHE aggregation is represented by DecryptionRequested event.
- *         Next step: replace placeholders with fhEVM euint ops and a real relayer callback.
+ *         After relayer callback, executes a single swap and assigns equal shares to intents' owners.
  */
 contract DCABatcher {
     IIntentRegistry public registry;
@@ -26,18 +26,31 @@ contract DCABatcher {
     uint256 public kMin = 10;
     uint256 public fallbackSeconds = 60;
 
-    // queue of intents for the next batch
+    // queue of intents for the next batch window
     uint256[] public queue;
     uint256 public lastBatchTs;
     uint256 public batchNonce;
     address public relayer; // offchain gateway/relayer allowed to call the callback
+
+    // batch snapshot + results
+    struct BatchMeta {
+        uint256 createdAt;
+        bool executed;
+        uint256 totalUsdc;
+        uint256 totalEth;
+    }
+    mapping(uint256 => BatchMeta) public batches;                   // batchId => meta
+    mapping(uint256 => uint256[]) public batchIntents;              // batchId => intentIds
+    mapping(uint256 => mapping(uint256 => uint256)) public share;   // batchId => intentId => WETH amount (wei)
+    mapping(uint256 => mapping(uint256 => bool)) public claimed;    // batchId => intentId => claimed?
 
     event JoinedBatch(uint256 indexed intentId, address indexed user);
     event BatchReady(uint256 indexed batchId, uint256 size);
     event DecryptionRequested(uint256 indexed batchId, bytes aggregateCiphertext, uint256[] intentIds);
     event DecryptionCallback(uint256 indexed batchId, uint256 totalUsdc);
     event SwapExecuted(uint256 indexed batchId, uint256 amountIn, uint256 amountOut);
-    event DistributionQueued(uint256 indexed batchId, uint256 totalEth, uint256 size);
+    event ShareAssigned(uint256 indexed batchId, uint256 indexed intentId, address owner, uint256 amountWei);
+    event Claimed(uint256 indexed batchId, uint256 indexed intentId, address owner, uint256 amountWei);
 
     constructor(address _registry) {
         registry = IIntentRegistry(_registry);
@@ -87,6 +100,8 @@ contract DCABatcher {
     function onDecryptionResult(uint256 batchId, uint256 totalUsdc, uint256 minEthOut) external {
         require(msg.sender == relayer, "only relayer");
         require(batchId == batchNonce, "stale batch");
+        BatchMeta storage meta = batches[batchId];
+        require(!meta.executed, "already executed");
 
         emit DecryptionCallback(batchId, totalUsdc);
 
@@ -94,14 +109,42 @@ contract DCABatcher {
         uint256 amountOut = dexAdapter.swapUsdcToEth(totalUsdc, minEthOut);
         emit SwapExecuted(batchId, totalUsdc, amountOut);
 
-        // 2) distribution placeholder:
-        //    In production, compute shares under FHE and store per-user encrypted results.
-        emit DistributionQueued(batchId, amountOut, queue.length);
+        // 2) assign equal shares (placeholder; real version uses FHE proportional splits)
+        uint256 size = batchIntents[batchId].length;
+        if (size > 0 && amountOut > 0) {
+            uint256 base = amountOut / size; // remainder is ignored in MVP
+            for (uint256 i = 0; i < size; i++) {
+                uint256 intentId = batchIntents[batchId][i];
+                share[batchId][intentId] = base;
+                address owner = registry.ownerOf(intentId);
+                emit ShareAssigned(batchId, intentId, owner, base);
+            }
+        }
+
+        // 3) finalize
+        meta.createdAt = block.timestamp;
+        meta.executed = true;
+        meta.totalUsdc = totalUsdc;
+        meta.totalEth  = amountOut;
 
         // reset queue and start a new window
         delete queue;
         lastBatchTs = block.timestamp;
         batchNonce += 1;
+    }
+
+    /// @notice Claim assigned WETH for a given intent in an executed batch (transfers from adapter)
+    function claim(uint256 batchId, uint256 intentId) external {
+        require(batches[batchId].executed, "batch not executed");
+        require(registry.ownerOf(intentId) == msg.sender, "not owner");
+        require(!claimed[batchId][intentId], "already claimed");
+
+        uint256 amount = share[batchId][intentId];
+        require(amount > 0, "nothing to claim");
+
+        claimed[batchId][intentId] = true;
+        dexAdapter.sweepWeth(msg.sender, amount);
+        emit Claimed(batchId, intentId, msg.sender, amount);
     }
 
     // ------- helpers -------
@@ -116,15 +159,23 @@ contract DCABatcher {
 
     function _requestDecryption() internal {
         uint256 id = batchNonce;
-        emit BatchReady(id, queue.length);
+
+        // snapshot queue into batchIntents
+        uint256 len = queue.length;
+        uint256[] storage arr = batchIntents[id];
+        for (uint256 i = 0; i < len; i++) {
+            arr.push(queue[i]);
+        }
+
+        emit BatchReady(id, len);
 
         // In production: build the aggregated ciphertext from per-interval encrypted amounts.
         bytes memory aggregateCiphertext = ""; // placeholder for fhEVM ciphertext
         emit DecryptionRequested(id, aggregateCiphertext, queue);
     }
 
-    // view helper for UI
-    function currentQueue() external view returns (uint256[] memory ids) {
-        ids = queue;
-    }
+    // view helpers for UI
+    function currentQueue() external view returns (uint256[] memory ids) { ids = queue; }
+    function getBatchIntents(uint256 batchId) external view returns (uint256[] memory ids) { ids = batchIntents[batchId]; }
+    function getShare(uint256 batchId, uint256 intentId) external view returns (uint256) { return share[batchId][intentId]; }
 }
