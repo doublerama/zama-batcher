@@ -1,19 +1,23 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
+import "./fhe/FHENumeric.sol";
+
 /**
  * @title FHEIntentRegistry (starter, scaffolded)
- * @notice Stores ENCRYPTED DCA parameters. Currently kept as raw bytes.
- *         In the next step, replace bytes with fhEVM euint types and wire the gateway/relayer.
+ * @notice Stores ENCRYPTED DCA parameters. Currently kept as FHENumeric.Cipher (bytes wrapper).
+ *         Next step: replace Cipher with fhEVM euint types and wire the gateway/relayer.
  */
 contract FHEIntentRegistry {
+    using FHENumeric for FHENumeric.Cipher;
+
     struct EncryptedIntent {
         address owner;
-        bytes budgetEnc;        // TODO: euint
-        bytes perIntervalEnc;   // TODO: euint
-        bytes frequencyEnc;     // TODO: euint
-        bytes durationEnc;      // TODO: euint
-        bytes dipFactorEnc;     // optional, TODO: euint
+        FHENumeric.Cipher budgetEnc;       // was: bytes
+        FHENumeric.Cipher perIntervalEnc;  // was: bytes
+        FHENumeric.Cipher frequencyEnc;    // was: bytes
+        FHENumeric.Cipher durationEnc;     // was: bytes
+        FHENumeric.Cipher dipFactorEnc;    // optional
         bool active;
     }
 
@@ -24,6 +28,10 @@ contract FHEIntentRegistry {
     event IntentSubmitted(uint256 indexed id, address indexed owner);
     event IntentCancelled(uint256 indexed id, address indexed owner);
 
+    /**
+     * @dev Keep the external ABI as `bytes` so frontends/offchain encryptors don’t break,
+     *      but store wrapped into FHENumeric.Cipher to prepare for fhEVM euint types.
+     */
     function submitIntent(
         bytes calldata budgetEnc,
         bytes calldata perIntervalEnc,
@@ -34,11 +42,11 @@ contract FHEIntentRegistry {
         id = ++nextId;
         intents[id] = EncryptedIntent({
             owner: msg.sender,
-            budgetEnc: budgetEnc,
-            perIntervalEnc: perIntervalEnc,
-            frequencyEnc: frequencyEnc,
-            durationEnc: durationEnc,
-            dipFactorEnc: dipFactorEnc,
+            budgetEnc: FHENumeric.Cipher(budgetEnc),
+            perIntervalEnc: FHENumeric.Cipher(perIntervalEnc),
+            frequencyEnc: FHENumeric.Cipher(frequencyEnc),
+            durationEnc: FHENumeric.Cipher(durationEnc),
+            dipFactorEnc: FHENumeric.Cipher(dipFactorEnc),
             active: true
         });
         ownerIntents[msg.sender].push(id);
