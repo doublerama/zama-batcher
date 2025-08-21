@@ -21,3 +21,37 @@ where FHE (euint) logic and relayer callbacks should be added.
 
 ## Environment
 Copy `.env.example` to `.env` and fill if needed.
+
+## How privacy is preserved
+- Users submit encrypted DCA intents (budget, per-interval amount, frequency, duration).
+- Batching provides k-anonymity (k configurable, default 10).
+- Only an aggregated ciphertext is emitted on-chain; individual amounts never appear on-chain.
+- A single swap USDC→ETH is executed for the total amount.
+- Distribution is computed under FHE (MVP: equal share; next: proportional shares under FHE).
+- Users claim privately from a pooled adapter; per-user amounts are not emitted.
+
+## Decentralization
+- Permissionless batching via `maybeExecuteBatch()`.
+- Chainlink Automation–compatible (`checkUpkeep`/`performUpkeep`).
+
+## DEX integration
+- Uniswap V3 SwapRouter02 adapter (`DexAdapterUniswap`) with real `exactInputSingle`.
+- Sepolia addresses configurable via `.env`.
+
+## What can observers see on-chain?
+- Batch size and the single USDC→ETH swap total.
+- No per-user strategy or per-interval amounts.
+- No individual transfers at execute time (distribution happens from a pooled adapter).
+
+## Strategy confidentiality
+- Encrypted: budget, per-interval, frequency, duration, optional dip factor.
+- Flexible privacy knobs: k, Δt, relayer/gateway trust model, optional Automation.
+
+## Testing & CI
+- Unit tests for k/Δt triggers and claim flow, GH Actions CI.
+- Gas/coverage to be added with `hardhat-gas-reporter` and `solidity-coverage`.
+
+## Next steps (FHE)
+- Replace `FHENumeric.Cipher` with fhEVM `euintX` types.
+- Aggregate amounts with FHE ops; decrypt only the total via Zama gateway.
+- Compute proportional shares under FHE; store encrypted allocations for private claim.
