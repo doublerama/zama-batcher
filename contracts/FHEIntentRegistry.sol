@@ -3,8 +3,8 @@ pragma solidity ^0.8.20;
 
 /**
  * @title FHEIntentRegistry (starter, scaffolded)
- * @notice Хранит ЗАШИФРОВАННЫЕ параметры DCA. Сейчас это bytes-поля.
- *         На следующем этапе заменим на euint (fhEVM) и добавим relayer/gateway хук.
+ * @notice Stores ENCRYPTED DCA parameters. Currently kept as raw bytes.
+ *         In the next step, replace bytes with fhEVM euint types and wire the gateway/relayer.
  */
 contract FHEIntentRegistry {
     struct EncryptedIntent {
@@ -52,7 +52,7 @@ contract FHEIntentRegistry {
         emit IntentCancelled(id, msg.sender);
     }
 
-    // --- Минимальный API для батчера ---
+    // --- Minimal API for the batcher ---
 
     function isActive(uint256 id) external view returns (bool) {
         return intents[id].active;
