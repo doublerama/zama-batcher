@@ -1,9 +1,11 @@
+
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
 interface IIntentRegistry {
     function isActive(uint256 id) external view returns (bool);
     function ownerOf(uint256 id) external view returns (address);
+    function aggregateBudgetCipher(uint256[] calldata ids) external view returns (bytes memory);
 }
 
 interface IUniswapAdapter {
@@ -166,8 +168,8 @@ contract DCABatcher is IAutomationCompatible {
         emit BatchReady(id, len);
 
         // Production: aggregate FHE ciphertext. Placeholder for now.
-        bytes memory aggregateCiphertext = "";
-        emit DecryptionRequested(id, aggregateCiphertext, queue);
+        bytes memory aggregateCiphertext = registry.aggregateBudgetCipher(queue);
+emit DecryptionRequested(id, aggregateCiphertext, queue);
     }
 
     // ---------------- views for UI ----------------
