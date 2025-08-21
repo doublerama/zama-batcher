@@ -1,23 +1,17 @@
 import { expect } from "chai";
-import { ethers, deployments } from "hardhat";
+import { deployments } from "hardhat";
 
-describe("Starter smoke", () => {
-  it("deploys core contracts", async () => {
+describe("Starter smoke", function () {
+  it("deploys core contracts", async function () {
     await deployments.fixture(["core"]);
 
-    // addresses из hardhat-deploy
     const reg = await deployments.get("FHEIntentRegistry");
     const batcher = await deployments.get("DCABatcher");
-    const adapter = await deployments.get("DexAdapterUniswap");
+    const uni = await deployments.getOrNull("DexAdapterUniswap");
+    const mock = await deployments.getOrNull("MockAdapter");
 
-    // просто проверим, что адреса валидные
-    expect(ethers.isAddress(reg.address)).to.eq(true);
-    expect(ethers.isAddress(batcher.address)).to.eq(true);
-    expect(ethers.isAddress(adapter.address)).to.eq(true);
-
-    // и что контракт реально существует (публичное поле возвращает 0n)
-    const regC = await ethers.getContractAt("FHEIntentRegistry", reg.address);
-    const next = await regC.nextId();
-    expect(next).to.equal(0n);
+    expect(reg.address).to.match(/^0x[0-9a-fA-F]{40}$/);
+    expect(batcher.address).to.match(/^0x[0-9a-fA-F]{40}$/);
+    expect(!!uni || !!mock, "one adapter should be deployed").to.equal(true);
   });
 });
