@@ -19,18 +19,19 @@ interface IAutomationCompatible {
 
 /**
  * @title DCABatcher
- * @notice Collects encrypted intents (by id), triggers batch by k/Δt,
- *         calls relayer callback, executes single swap on DEX and assigns shares.
+ * @notice Collects encrypted DCA intents (by id), triggers a batch by k/Δt,
+ *         calls the relayer callback, executes a single swap on a DEX adapter
+ *         and assigns shares to intents.
  */
 contract DCABatcher is IAutomationCompatible {
     IIntentRegistry public registry;
     IUniswapAdapter public dexAdapter;
 
-    // k-anonymity and time fallback
+    // k-anonymity threshold and time-based fallback
     uint256 public kMin = 10;
     uint256 public fallbackSeconds = 60;
 
-    // rolling window
+    // rolling queue for the current batch
     uint256[] public queue;
     uint256 public lastBatchTs;
     uint256 public batchNonce;
@@ -42,7 +43,7 @@ contract DCABatcher is IAutomationCompatible {
         uint256 totalUsdc;
         uint256 totalEth;
     }
-    mapping(uint256 => BatchMeta) public batches;                   // batchId => meta
+    mapping(uint256 => BatchMeta) public batches;                   // batchId => metadata
     mapping(uint256 => uint256[]) public batchIntents;              // batchId => intentIds
     mapping(uint256 => mapping(uint256 => uint256)) public share;   // batchId => intentId => WETH amount
     mapping(uint256 => mapping(uint256 => bool)) public claimed;    // batchId => intentId => claimed?
@@ -60,7 +61,7 @@ contract DCABatcher is IAutomationCompatible {
         lastBatchTs = block.timestamp;
     }
 
-    // -------- admin (MVP; в проде — timelock/governance) --------
+    // -------- admin (MVP; in production use timelock/governance) --------
     function setParams(uint256 _kMin, uint256 _fallbackSeconds) external {
         require(_kMin > 0, "k>0");
         kMin = _kMin;
@@ -103,11 +104,11 @@ contract DCABatcher is IAutomationCompatible {
 
         emit DecryptionCallback(batchId, totalUsdc);
 
-        // 1) single swap USDC->WETH on DEX adapter
+        // 1) single USDC->WETH swap on the DEX adapter
         uint256 amountOut = dexAdapter.swapUsdcToEth(totalUsdc, minEthOut);
         emit SwapExecuted(batchId, totalUsdc, amountOut);
 
-        // 2) equal split (MVP; далее — пропорции под FHE)
+        // 2) equal split (MVP; next iteration: proportional shares under FHE)
         uint256 size = batchIntents[batchId].length;
         if (size > 0 && amountOut > 0) {
             uint256 base = amountOut / size;
@@ -119,7 +120,7 @@ contract DCABatcher is IAutomationCompatible {
             }
         }
 
-        // 3) finalize + roll window
+        // 3) finalize and roll the window
         meta.createdAt = block.timestamp;
         meta.executed = true;
         meta.totalUsdc = totalUsdc;
@@ -164,7 +165,7 @@ contract DCABatcher is IAutomationCompatible {
 
         emit BatchReady(id, len);
 
-        // In production: aggregate FHE ciphertext; here it's a placeholder.
+        // Production: aggregate FHE ciphertext. Placeholder for now.
         bytes memory aggregateCiphertext = "";
         emit DecryptionRequested(id, aggregateCiphertext, queue);
     }
@@ -174,7 +175,7 @@ contract DCABatcher is IAutomationCompatible {
     function getBatchIntents(uint256 batchId) external view returns (uint256[] memory ids) { ids = batchIntents[batchId]; }
     function getShare(uint256 batchId, uint256 intentId) external view returns (uint256) { return share[batchId][intentId]; }
 
-    // -------- Chainlink Automation-compatible (ВНУТРИ контракта!) --------
+    // -------- Chainlink Automation-compatible (inside the contract) --------
     function checkUpkeep(bytes calldata) external view override returns (bool upkeepNeeded, bytes memory performData) {
         upkeepNeeded = _readyByK() || _readyByTime();
         performData = "";
