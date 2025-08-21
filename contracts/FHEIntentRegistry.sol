@@ -2,9 +2,9 @@
 pragma solidity ^0.8.20;
 
 /**
- * @title FHEIntentRegistry (starter)
- * @notice Stores encrypted DCA intents. In production, replace types with FHE euint
- *         and integrate with Zama gateway/relayer for encryption/decryption.
+ * @title FHEIntentRegistry (starter, scaffolded)
+ * @notice Хранит ЗАШИФРОВАННЫЕ параметры DCA. Сейчас это bytes-поля.
+ *         На следующем этапе заменим на euint (fhEVM) и добавим relayer/gateway хук.
  */
 contract FHEIntentRegistry {
     struct EncryptedIntent {
@@ -50,5 +50,15 @@ contract FHEIntentRegistry {
         require(it.owner == msg.sender, "not owner");
         it.active = false;
         emit IntentCancelled(id, msg.sender);
+    }
+
+    // --- Минимальный API для батчера ---
+
+    function isActive(uint256 id) external view returns (bool) {
+        return intents[id].active;
+    }
+
+    function ownerOf(uint256 id) external view returns (address) {
+        return intents[id].owner;
     }
 }
