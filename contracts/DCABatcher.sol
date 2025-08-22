@@ -1,7 +1,7 @@
-
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
+// -------- Interfaces --------
 interface IIntentRegistry {
     function isActive(uint256 id) external view returns (bool);
     function ownerOf(uint256 id) external view returns (address);
@@ -39,6 +39,21 @@ contract DCABatcher is IAutomationCompatible {
     uint256 public batchNonce;
     address public relayer;
 
+    // --- security ---
+    uint256 private _locked;
+    address public governor;
+    bool public paused;
+
+    modifier nonReentrant() {
+        require(_locked == 0, "REENTRANCY");
+        _locked = 1;
+        _;
+        _locked = 0;
+    }
+
+    modifier onlyGov() { require(msg.sender == governor, "GOV"); _; }
+    modifier whenNotPaused() { require(!paused, "PAUSED"); _; }
+
     struct BatchMeta {
         uint256 createdAt;
         bool executed;
@@ -61,25 +76,28 @@ contract DCABatcher is IAutomationCompatible {
     constructor(address _registry) {
         registry = IIntentRegistry(_registry);
         lastBatchTs = block.timestamp;
+        governor = msg.sender;
     }
 
-    // -------- admin (MVP; in production use timelock/governance) --------
-    function setParams(uint256 _kMin, uint256 _fallbackSeconds) external {
+    // ---------------- admin (MVP; in production use timelock/governance) ----------------
+    function setParams(uint256 _kMin, uint256 _fallbackSeconds) external onlyGov {
         require(_kMin > 0, "k>0");
         kMin = _kMin;
         fallbackSeconds = _fallbackSeconds;
     }
 
-    function setRelayer(address _relayer) external {
+    function setRelayer(address _relayer) external onlyGov {
         relayer = _relayer;
     }
 
-    function setDexAdapter(address _adapter) external {
+    function setDexAdapter(address _adapter) external onlyGov {
         dexAdapter = IUniswapAdapter(_adapter);
     }
 
+    function setPaused(bool v) external onlyGov { paused = v; }
+
     // ---------------- user flow ----------------
-    function joinBatch(uint256 intentId) external {
+    function joinBatch(uint256 intentId) external whenNotPaused {
         require(registry.isActive(intentId), "inactive intent");
         require(registry.ownerOf(intentId) == msg.sender, "not owner");
 
@@ -91,14 +109,14 @@ contract DCABatcher is IAutomationCompatible {
         }
     }
 
-    function maybeExecuteBatch() external {
+    function maybeExecuteBatch() external whenNotPaused {
         if (_readyByK() || _readyByTime()) {
             _requestDecryption();
         }
     }
 
     // --------- relayer callback (after FHE decryption of the total) ---------
-    function onDecryptionResult(uint256 batchId, uint256 totalUsdc, uint256 minEthOut) external {
+    function onDecryptionResult(uint256 batchId, uint256 totalUsdc, uint256 minEthOut) external nonReentrant {
         require(msg.sender == relayer, "only relayer");
         require(batchId == batchNonce, "stale batch");
         BatchMeta storage meta = batches[batchId];
@@ -133,7 +151,7 @@ contract DCABatcher is IAutomationCompatible {
         batchNonce += 1;
     }
 
-    function claim(uint256 batchId, uint256 intentId) external {
+    function claim(uint256 batchId, uint256 intentId) external nonReentrant {
         require(batches[batchId].executed, "batch not executed");
         require(registry.ownerOf(intentId) == msg.sender, "not owner");
         require(!claimed[batchId][intentId], "already claimed");
@@ -167,9 +185,9 @@ contract DCABatcher is IAutomationCompatible {
 
         emit BatchReady(id, len);
 
-        // Production: aggregate FHE ciphertext. Placeholder for now.
+        // Build encrypted aggregate of budgets for this batch
         bytes memory aggregateCiphertext = registry.aggregateBudgetCipher(queue);
-emit DecryptionRequested(id, aggregateCiphertext, queue);
+        emit DecryptionRequested(id, aggregateCiphertext, queue);
     }
 
     // ---------------- views for UI ----------------
@@ -183,7 +201,7 @@ emit DecryptionRequested(id, aggregateCiphertext, queue);
         performData = "";
     }
 
-    function performUpkeep(bytes calldata) external override {
+    function performUpkeep(bytes calldata) external override whenNotPaused {
         if (_readyByK() || _readyByTime()) {
             _requestDecryption();
         }
