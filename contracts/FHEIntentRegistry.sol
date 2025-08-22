@@ -19,7 +19,7 @@ contract FHEIntentRegistry {
         FHE.euint64 perTick;      // amount per interval
         FHE.euint32 frequencySec; // interval in seconds
         FHE.euint32 durationSec;  // total duration in seconds
-        bytes aux;                // encrypted extra rules (e.g. buy-the-dip flags)
+        bytes aux;                // encrypted extra rules
         // Plain metadata
         address owner;
         bool active;
