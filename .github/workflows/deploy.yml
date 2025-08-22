@@ -1,0 +1,24 @@
+name: Deploy Sepolia
+
+on:
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm ci
+      - run: npx hardhat compile
+      - name: Deploy
+        env:
+          SEPOLIA_RPC_URL: ${{ secrets.SEPOLIA_RPC_URL }}
+          PRIVATE_KEY: ${{ secrets.PRIVATE_KEY }}
+          UNISWAP_ROUTER: ${{ secrets.UNISWAP_ROUTER }}
+          USDC: ${{ secrets.USDC }}
+          WETH: ${{ secrets.WETH }}
+          POOL_FEE: ${{ secrets.POOL_FEE }}
+        run: npx hardhat deploy --network sepolia
