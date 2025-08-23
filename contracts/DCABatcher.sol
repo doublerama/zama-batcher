@@ -35,6 +35,7 @@ contract DCABatcher is IAutomationCompatible {
 
     // rolling queue for the current batch
     uint256[] public queue;
+    mapping(uint256 => bool) public inQueue; // prevent duplicate joins
     uint256 public lastBatchTs;
     uint256 public batchNonce;
     address public relayer;
@@ -100,7 +101,9 @@ contract DCABatcher is IAutomationCompatible {
     function joinBatch(uint256 intentId) external whenNotPaused {
         require(registry.isActive(intentId), "inactive intent");
         require(registry.ownerOf(intentId) == msg.sender, "not owner");
+        require(!inQueue[intentId], "already queued");
 
+        inQueue[intentId] = true;
         queue.push(intentId);
         emit JoinedBatch(intentId, msg.sender);
 
@@ -119,6 +122,7 @@ contract DCABatcher is IAutomationCompatible {
     function onDecryptionResult(uint256 batchId, uint256 totalUsdc, uint256 minEthOut) external nonReentrant {
         require(msg.sender == relayer, "only relayer");
         require(batchId == batchNonce, "stale batch");
+        require(address(dexAdapter) != address(0), "adapter not set");
         BatchMeta storage meta = batches[batchId];
         require(!meta.executed, "already executed");
 
@@ -146,6 +150,10 @@ contract DCABatcher is IAutomationCompatible {
         meta.totalUsdc = totalUsdc;
         meta.totalEth  = amountOut;
 
+        // clear inQueue flags for this batch
+        for (uint256 i = 0; i < batchIntents[batchId].length; i++) {
+            inQueue[ batchIntents[batchId][i] ] = false;
+        }
         delete queue;
         lastBatchTs = block.timestamp;
         batchNonce += 1;
