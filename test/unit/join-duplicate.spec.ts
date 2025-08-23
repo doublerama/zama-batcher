@@ -14,7 +14,7 @@ describe("joinBatch duplicate protection", function () {
 
     await (await reg.submitIntent("0x01","0x02","0x03","0x04","0x")).wait(); // id = 1
 
-    // чтобы не сработал автотритгер, поднимем k и дельту
+    // keep batch from auto-triggering
     await (await batcher.setParams(3, 3600)).wait();
 
     await (await batcher.joinBatch(1)).wait();
