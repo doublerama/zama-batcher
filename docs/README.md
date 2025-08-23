@@ -4,8 +4,6 @@ Privacy-preserving DCA bot with **transaction batching** on Sepolia. Users submi
 
 > This repo focuses on on-chain contracts and an optional relayer. A separate frontend is not required for the bounty.
 
----
-
 ## Key features
 
 - **Batching for privacy (k-anonymity):** one aggregated swap per batch, not per user.
@@ -15,7 +13,8 @@ Privacy-preserving DCA bot with **transaction batching** on Sepolia. Users submi
 - **Pro-rata settlement:** users claim WETH shares after batch execution.
 - **FHE-ready:** placeholder ciphertext types can be swapped for fhEVM encrypted integers.
 
----
+## Quick start (local)
 
-## Repository layout
-
+```bash
+npm i
+npx hardhat test
