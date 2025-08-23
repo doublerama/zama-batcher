@@ -12,6 +12,20 @@ describe("claim guards", function () {
     const reg = await ethers.getContractAt("FHEIntentRegistry", regDep.address, u1);
     const batcher = await ethers.getContractAt("DCABatcher", batcherDep.address, u1);
 
+    // --- install no-op adapter so onDecryptionResult won't pull USDC ---
+    const usdcDep = await deployments.getOrNull("MockERC20_0"); // USDC mock in fixtures
+    const wethDep = await deployments.getOrNull("MockERC20_1"); // WETH mock in fixtures
+    if (!usdcDep || !wethDep) {
+      return this.skip(); // fixture not present in this env
+    }
+    const Noop = await ethers.getContractFactory("NoopAdapter", u1);
+    const noop = await Noop.deploy();
+    await noop.waitForDeployment();
+    await (await noop.configure(usdcDep.address, wethDep.address)).wait();
+    await (await batcher.setDexAdapter(await noop.getAddress())).wait();
+
+    const weth = await ethers.getContractAt("MockERC20", wethDep.address, u1);
+
     // two intents
     await (await reg.submitIntent("0x01","0x02","0x03","0x04","0x")).wait(); // id = 1 (u1)
     const reg2 = reg.connect(u2);
@@ -22,14 +36,8 @@ describe("claim guards", function () {
     await (await batcher.joinBatch(1)).wait();
     await (await batcher.connect(u2).joinBatch(2)).wait();
 
-    // --- FUND BATCHER WITH MOCK USDC BEFORE swap ---
-    // In fixtures: MockERC20_0 is USDC, MockERC20_1 is WETH
-    const usdcDep = await deployments.getOrNull("MockERC20_0");
-    if (usdcDep) {
-      const usdc = await ethers.getContractAt("MockERC20", usdcDep.address, u1);
-      // amountIn that our test swap will consume (2_000_000)
-      await (await usdc.mint(batcherDep.address, 2_000_000)).wait();
-    }
+    // pre-fund batcher with WETH that will be paid out after "swap"
+    await (await weth.mint(batcherDep.address, 2_000_000)).wait();
 
     // simulate relayer decrypt result: totalOut = 2_000_000 -> 1_000_000 each
     await (await batcher.setRelayer(await u1.getAddress())).wait();
