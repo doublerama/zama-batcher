@@ -24,7 +24,7 @@ Privacy-preserving DCA bot with **transaction batching** on Sepolia. Users submi
 ## Networks & addresses (Sepolia)
 - **Router (UniswapV3)**: `0x3bFA4769FB09eefC5a80d6E87c3B9C650f7Ae48E`
 - **WETH**: `0xfff9976782d46cc05630d1f6ebab18b2324d6b14`
-- **USDC**: use a test/mocked ERC20 or your preferred stable on Sepolia
+- **USDC**: test/mocked ERC20 (or your Sepolia stable)
 
 > You can override these via env or constructor params in deploy scripts.
 
