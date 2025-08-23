@@ -12,7 +12,7 @@ describe("pause", function () {
     const reg = await ethers.getContractAt("FHEIntentRegistry", regAddr, user);
     const batcher = await ethers.getContractAt("DCABatcher", batcherAddr, user);
 
-    await (await reg.submitIntent("0x01","0x02","0x03","0x04","0x")).wait(); // id=1
+    await (await reg.submitIntent("0x01","0x02","0x03","0x04","0x")).wait(); // id = 1
 
     await (await batcher.setPaused(true)).wait();
 
