@@ -1,57 +1,35 @@
-# Zama DCA Batcher (Starter)
+# Zama DCA Batcher (FHE-ready)
 
-Privacy-preserving DCA bot prototype using FHE + batching (USDC→ETH on Uniswap, Sepolia).  
-This is a **starter scaffold** to help you submit to the Zama Bounty. Contracts are minimal and include TODOs
-where FHE (euint) logic and relayer callbacks should be added.
+Privacy-preserving DCA bot with **transaction batching** on Sepolia. Users submit **encrypted DCA intents** (placeholder type today, FHE types when available). The batcher aggregates k intents (target k=10) or falls back after Δt, executes a **single USDC→WETH swap** on a DEX, and distributes WETH back **pro-rata**.
 
-## Quick start
-1. Install: `npm i`
-2. Build: `npx hardhat compile`
-3. Test:  `npx hardhat test`
+> This repo focuses on the onchain core + offchain relayer. Frontend is optional for the bounty and can be added later.
 
-## What’s inside
-- `contracts/` – placeholder contracts:
-  - `FHEIntentRegistry.sol` – stores encrypted DCA intents (TODO: replace with fhEVM euint types).
-  - `DCABatcher.sol` – aggregates intents, triggers batch, executes 1 swap USDC→ETH (TODO: hook Uniswap + relayer).
-  - `DexAdapterUniswap.sol` – minimal adapter interface (TODO: implement real swap).
-  - `libraries/FHEMath.sol` – helpers (TODO: add FHE ops).
-- `offchain/` – placeholders for the permissionless executor and the gateway listener.
-- `deploy/` – example Hardhat Deploy script.
-- `test/` – smoke test.
+## Why batching?
+- Obfuscates individual strategies (k-anonymity)
+- Mitigates MEV & portfolio tracking
+- One aggregated swap reveals only totals; per-user amounts remain hidden (encrypted at rest/in transit; computed under FHE once fhEVM is enabled)
 
-## Environment
-Copy `.env.example` to `.env` and fill if needed.
+## Contracts
+- `contracts/FHEIntentRegistry.sol` — stores **encrypted** DCA parameters (today: `bytes` placeholder via `IFHENumeric.Cipher`)
+- `contracts/DCABatcher.sol` — collects intents, triggers batch on **k** or **Δt**, calls DEX adapter, emits/handles decryption lifecycle, distributes WETH
+- `contracts/DexAdapterUniswap.sol` — minimal Uniswap V3 adapter (Sepolia)
+- `contracts/mocks/*` — test adapters & tokens (Noop/Reenter, MockERC20s)
 
-## How privacy is preserved
-- Users submit encrypted DCA intents (budget, per-interval amount, frequency, duration).
-- Batching provides k-anonymity (k configurable, default 10).
-- Only an aggregated ciphertext is emitted on-chain; individual amounts never appear on-chain.
-- A single swap USDC→ETH is executed for the total amount.
-- Distribution is computed under FHE (MVP: equal share; next: proportional shares under FHE).
-- Users claim privately from a pooled adapter; per-user amounts are not emitted.
+## Offchain
+- `offchain/relayer` — daemon that listens for `DecryptionRequested` and calls `onDecryptionResult(totalOut, …)` when:
+  - `k` intents joined, or
+  - time window Δt elapsed.
+  - Uses a simple price source (router quote) for realism; **no private strategy data** is logged.
 
-## Decentralization
-- Permissionless batching via `maybeExecuteBatch()`.
-- Chainlink Automation–compatible (`checkUpkeep`/`performUpkeep`).
+## Networks & addresses (Sepolia)
+- **Router (UniswapV3)**: `0x3bFA4769FB09eefC5a80d6E87c3B9C650f7Ae48E`
+- **WETH**: `0xfff9976782d46cc05630d1f6ebab18b2324d6b14`
+- **USDC**: use a test/mocked ERC20 or your preferred stable on Sepolia
 
-## DEX integration
-- Uniswap V3 SwapRouter02 adapter (`DexAdapterUniswap`) with real `exactInputSingle`.
-- Sepolia addresses configurable via `.env`.
+> You can override these via env or constructor params in deploy scripts.
 
-## What can observers see on-chain?
-- Batch size and the single USDC→ETH swap total.
-- No per-user strategy or per-interval amounts.
-- No individual transfers at execute time (distribution happens from a pooled adapter).
-
-## Strategy confidentiality
-- Encrypted: budget, per-interval, frequency, duration, optional dip factor.
-- Flexible privacy knobs: k, Δt, relayer/gateway trust model, optional Automation.
-
-## Testing & CI
-- Unit tests for k/Δt triggers and claim flow, GH Actions CI.
-- Gas/coverage to be added with `hardhat-gas-reporter` and `solidity-coverage`.
-
-## Next steps (FHE)
-- Replace `FHENumeric.Cipher` with fhEVM `euintX` types.
-- Aggregate amounts with FHE ops; decrypt only the total via Zama gateway.
-- Compute proportional shares under FHE; store encrypted allocations for private claim.
+## Setup
+```bash
+git clone <your-repo>
+cd <your-repo>
+npm i
