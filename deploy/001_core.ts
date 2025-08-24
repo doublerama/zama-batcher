@@ -1,37 +1,63 @@
 import { DeployFunction } from "hardhat-deploy/types";
+import { HardhatRuntimeEnvironment } from "hardhat/types";
 
-const func: DeployFunction = async ({ deployments, getNamedAccounts }) => {
-  const { deploy, log, execute } = deployments;
+const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
+  const { deployments, getNamedAccounts, ethers } = hre;
+  const { deploy, execute, log } = deployments;
+
   const { deployer } = await getNamedAccounts();
 
-  const UNISWAP_ROUTER = process.env.UNISWAP_ROUTER;
-  const USDC = process.env.USDC;
-  const WETH = process.env.WETH;
+  const ROUTER = process.env.UNISWAP_ROUTER || "";
+  const WETH = process.env.WETH || "";
   const POOL_FEE = Number(process.env.POOL_FEE || "3000"); // 0.3%
 
-  // 1) Registry
-  const reg = await deploy("FHEIntentRegistry", { from: deployer, log: true, args: [] });
-
-  // 2) Batcher
-  const batcher = await deploy("DCABatcher", { from: deployer, log: true, args: [reg.address] });
-
-  // 3) Adapter: real Uniswap if env is provided; otherwise fall back to mocks.
-  if (UNISWAP_ROUTER && USDC && WETH) {
-    const adapter = await deploy("DexAdapterUniswap", { from: deployer, log: true, args: [] });
-    await execute("DCABatcher", { from: deployer, log: true }, "setDexAdapter", adapter.address);
-    await execute("DexAdapterUniswap", { from: deployer, log: true }, "setBatcher", batcher.address);
-    await execute("DexAdapterUniswap", { from: deployer, log: true }, "configure", UNISWAP_ROUTER, USDC, WETH, POOL_FEE);
-    log(`DexAdapter configured (router=${UNISWAP_ROUTER}, USDC=${USDC}, WETH=${WETH})`);
-  } else {
-    const usdc = await deploy("MockERC20", { from: deployer, log: true, args: ["Mock USDC", "mUSDC", 6] });
-    const weth = await deploy("MockERC20", { from: deployer, log: true, args: ["Mock WETH", "mWETH", 18] });
-    const adapter = await deploy("MockAdapter", { from: deployer, log: true, args: [] });
-
-    await execute("DCABatcher", { from: deployer, log: true }, "setDexAdapter", adapter.address);
-    await execute("MockAdapter", { from: deployer, log: true }, "setBatcher", batcher.address);
-    await execute("MockAdapter", { from: deployer, log: true }, "configure", usdc.address, weth.address);
-    log(`Using mocks: usdc=${usdc.address}, weth=${weth.address}, adapter=${adapter.address}`);
+  if (!ROUTER || !WETH) {
+    throw new Error("Missing UNISWAP_ROUTER or WETH env vars");
   }
+
+  log("Deploying FHEIntentRegistry...");
+  const reg = await deploy("FHEIntentRegistry", {
+    from: deployer,
+    args: [],
+    log: true,
+    skipIfAlreadyDeployed: true,
+  });
+
+  log("Deploying DexAdapterUniswap...");
+  const adapter = await deploy("DexAdapterUniswap", {
+    from: deployer,
+    args: [],
+    log: true,
+    skipIfAlreadyDeployed: true,
+  });
+
+  log("Configuring DexAdapterUniswap...");
+  await execute(
+    "DexAdapterUniswap",
+    { from: deployer, log: true },
+    "configure",
+    ROUTER,
+    (await ethers.getAddress(WETH)),
+    (await ethers.getAddress(WETH)), // if adapter expects usdc, pass placeholder or real USDC when available
+    POOL_FEE
+  );
+
+  log("Deploying DCABatcher...");
+  // tune kTarget (batch size) & dtSeconds (time fallback) as needed
+  const kTarget = 10;
+  const dtSeconds = 60;
+  const batcher = await deploy("DCABatcher", {
+    from: deployer,
+    args: [reg.address, adapter.address, kTarget, dtSeconds],
+    log: true,
+    skipIfAlreadyDeployed: true,
+  });
+
+  log("Deployment summary:");
+  log(`FHEIntentRegistry: ${reg.address}`);
+  log(`DexAdapterUniswap: ${adapter.address}`);
+  log(`DCABatcher:       ${batcher.address}`);
 };
+
 export default func;
-func.tags = ["core"];
+func.tags = ["sepolia"];
