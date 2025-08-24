@@ -18,3 +18,17 @@ Privacy-preserving DCA bot with **transaction batching** on Sepolia. Users submi
 ```bash
 npm i
 npx hardhat test
+
+## Sepolia Deployments
+
+- **FHEIntentRegistry:** `0xAfEb7273B9E2E939533a5C2f5C05fBa334B5FF13`
+- **DexAdapterUniswap:** `0x7c1D2783d8652f49ee79323868A5982cC4E9c087`
+- **DCABatcher:** `0x3B3e5949EA56A6cf332Be0D9a7F3cE1BFDCe8785`
+
+Parameters:
+- Uniswap V3 Router: `0x3bFA4769FB09eefC5a80d6E87c3B9C650f7Ae48E`
+- WETH: `0xfff9976782d46cc05630d1f6ebab18b2324d6b14`
+- Pool fee: `3000` (0.3%)
+
+> Detailed log: see `DEPLOYMENTS.md`.
+
