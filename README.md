@@ -48,3 +48,45 @@ Privacy-preserving DCA bot with **transaction batching** on Sepolia. Users submi
 git clone <your-repo>
 cd <your-repo>
 npm i
+
+## Submission
+
+**Project:** Zama DCA Batcher (FHE-ready)
+
+This repository implements a privacy-preserving DCA bot with on-chain batching (k-anonymity target) and a minimal Uniswap adapter for USDC→WETH on Sepolia. Users submit encrypted DCA intents (placeholder ciphertext type today), the batcher aggregates intents, executes a single swap on the DEX, and distributes shares pro-rata.
+
+### What’s included
+- On-chain contracts:
+  - `FHEIntentRegistry` – stores encrypted intents (temporary bytes-cipher type, FHE types pluggable).
+  - `DCABatcher` – joins intents into a batch (k-trigger or Δt fallback), executes swap via adapter, tracks shares, prevents double claim.
+  - `DexAdapterUniswap` – minimal USDC→WETH adapter (exactInputSingle) with `configure(router, usdc, weth, poolFee)`.
+- Tests (Hardhat): batch triggers (k/Δt), pause, reentrancy/claim guards, duplicate intent protection, smoke.
+- CI: compile + test on pushes/PRs.
+- Deploy scripts + post-deploy configuration.
+- Docs: overview, architecture, usage.
+- `DEPLOYMENTS.md` with addresses and tx hashes.
+
+### How to run locally (quick)
+```bash
+npm i
+npx hardhat test
+# deploy to Sepolia (needs RPC + funded EOA):
+# npx hardhat deploy --network sepolia
+
+### Sepolia deployments
+(Full details and tx hashes are in [`DEPLOYMENTS.md`](./DEPLOYMENTS.md).)
+
+- **FHEIntentRegistry:** `0x033eF945C847bC95df6E876D9D4dd595A66d388a`
+- **DexAdapterUniswap:** `0x86DA8dC560EbEae631Ae138b9a8d437a1ad7D496`
+- **DCABatcher:** `0xb64De059d3827BF916c9f07762C3D8B6A96A23f2`
+
+**Uniswap (Sepolia) params**
+- Router: `0x3bFA4769FB09eefC5a80d6E87c3B9C650f7Ae48E`
+- USDC:   `0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238`
+- WETH:   `0xfff9976782d46cc05630d1f6ebab18b2324d6b14`
+- Pool fee: `3000`
+
+### Notes
+- FHE numeric types are mocked with a temporary `bytes`-based cipher wrapper; the design is ready to switch to native FHE types on fhEVM.
+- Swaps are unidirectional USDC→WETH, as required by the bounty scope.
+
