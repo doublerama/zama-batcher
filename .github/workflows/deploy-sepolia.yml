@@ -1,59 +1,40 @@
-name: deploy
+name: Deploy Sepolia
 
 on:
   workflow_dispatch:
-  push:
-    branches: [ "main" ]
-    paths:
-      - "contracts/**"
-      - "deploy/**"
-      - "scripts/**"
-      - "hardhat.config.ts"
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
-
+    timeout-minutes: 25
     env:
-      SEPOLIA_RPC_URL: ${{ secrets.SEPOLIA_RPC_URL }}
       PRIVATE_KEY: ${{ secrets.PRIVATE_KEY }}
+      SEPOLIA_RPC_URL: ${{ secrets.SEPOLIA_RPC_URL }}
       UNISWAP_ROUTER: ${{ secrets.UNISWAP_ROUTER }}
       WETH: ${{ secrets.WETH }}
       POOL_FEE: ${{ secrets.POOL_FEE }}
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Use Node 20
+      - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: '20'
 
       - name: Install
         run: |
           if [ -f package-lock.json ]; then
             npm ci
           else
-            echo "package-lock.json not found, falling back to npm install"
             npm install
           fi
-
 
       - name: Compile
         run: npx hardhat compile
 
-      - name: Warm up RPC (getChainId)
-        run: npx hardhat run scripts/ping-rpc.ts --network sepolia
-
-      - name: Deploy to Sepolia (with retries)
-        uses: nick-fields/retry@v3
-        with:
-          max_attempts: 3
-          retry_on: error
-          timeout_minutes: 8
-          command: npx hardhat deploy --tags sepolia --network sepolia
+      - name: Deploy to Sepolia
+        run: npx hardhat deploy --tags sepolia --network sepolia
 
       - name: Upload deployments
         if: always()
@@ -61,3 +42,4 @@ jobs:
         with:
           name: deployments-sepolia
           path: deployments/sepolia
+          if-no-files-found: warn
